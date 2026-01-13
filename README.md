@@ -30,4 +30,4 @@ ocenv list
 
 ## Special Thanks
 [tmux-sessionizer](https://github.com/ThePrimeagen/tmux-sessionizer) - for
-showing me da wae.
+showing me da wae

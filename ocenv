@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+
+VERSION=0.1.0
+
+sanity_check() {
+    if ! command -v tmux &>/dev/null; then
+        echo "==> tmux is not installed. Please install it first."
+        exit 1
+    fi
+
+    if ! command -v fzf &>/dev/null; then
+        echo "==> fzf is not installed. Please install it first."
+        exit 1
+    fi
+}
+
+write_config() {
+    read -rp "==> Enter cluster URL: " url
+    echo "==> Trying to authenticate via browser..."
+    oc login -w --server "$url" --kubeconfig "$1" &> /dev/null
+    echo "==> Cluster configuration created at $1"
+}
+
+is_tmux_running() {
+    local tmux_running=$(pgrep tmux)
+
+    if [[ -z $TMUX ]] && [[ -z $tmux_running ]]; then
+        return 1
+    fi
+    return 0
+}
+
+has_session() {
+    tmux list-sessions | grep -q "^$1:"
+}
+
+switch_to() {
+    if [[ -z $TMUX ]]; then
+        tmux attach-session -t "$1"
+    else
+        tmux switch-client -t "$1"
+    fi
+}
+
+create() {
+    if [[ -f "$cfg" ]]; then
+        read -n 1 -rp "==> Configuration for cluster '$name' already exists. Overwrite? [y/N] "
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]
+        then
+            write_config "$cfg"
+        fi
+    else
+        write_config "$cfg"
+    fi
+
+}
+
+use() {
+    if ! [[ -f $cfg ]]; then
+        read -n 1 -rp "==> Configuration for cluster '$name' does not exist. Create? [y/N] "
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]
+        then
+            write_config "$cfg"
+        else
+            return
+        fi
+    fi
+
+    oc whoami --kubeconfig "$cfg" &> /dev/null
+
+    if [[ $? != 0 ]]; then
+        echo "==> Session expired. Trying to authenticate via browser..."
+        oc login -w --kubeconfig "$cfg" &> /dev/null
+    fi
+
+    if ! is_tmux_running || ! has_session "$name"; then
+        # tagging session with __ocenv
+        tmux new-session -ds "$name" -t "__ocenv" -c $PWD -e KUBECONFIG="$cfg"
+    fi
+
+    if [[ $(tmux display-message -p '#S') != "$name" ]]; then
+        switch_to "$name"
+    else
+        echo "==> Environment '$name' is already active"
+    fi
+
+}
+
+remove() {
+    # surely this is safe?
+    if ! [[ -f $cfg ]]; then
+        echo "==> Environment '$name' does not exist"
+        return
+    fi
+    rm "$cfg"
+        echo "==> Environment '$name' was removed"
+}
+
+list() {
+    local sessions=$(get_sessions)
+
+    if [[ -n "$sessions" ]]; then
+        echo ":: Sessions"
+        for s in "$sessions"; do
+            echo "==> $s"
+        done
+    else
+        echo "==> No running sessions found"
+    fi
+}
+
+get_sessions() {
+    local envs=$(find ~/.kube/ocenv/ -name '*.yaml' -exec sh -c 'basename ${1%.*}' _ {} \;)
+    local sessions=$(tmux list-sessions -F '#S #{session_group}' | grep '__ocenv' | cut -d ' ' -f1)
+    echo "$sessions"
+}
+
+# MAIN
+sanity_check
+subcommand=$1
+
+if [[ -z "$subcommand" ]]; then
+    current_session=$(tmux display-message -p '#S')
+    selected=$(get_sessions | grep -xFv "$current_session" | fzf)
+    switch_to "$selected"
+    exit 0
+fi
+
+if [[ "$subcommand" != "help" && "$subcommand" != "list" && "$subcommand" != "version" ]]; then
+    name="$2"
+    [[ -z "$name" ]] && read -rp "==> Enter cluster name: " name
+    cfg="$HOME/.kube/ocenv/$name.yaml"
+fi
+
+case "$subcommand" in
+    "create")
+        create
+        ;;
+    "rm")
+        remove
+        ;;
+    "use")
+        use
+        ;;
+    "list")
+        list
+        ;;
+    "version")
+        echo "ocenv v$VERSION"
+        ;;
+    *)
+        printf "Usage: ocenv [SUBCOMMAND] [OPTIONS]\n"
+        printf "Subcommands:\n"
+        printf "  %-14s  %s\n" "create <NAME>" "Creates a new environment for a cluster"
+        printf "  %-14s  %s\n" "list" "Lists all running sessions for configured environments"
+        printf "  %-14s  %s\n" "rm <NAME>" "Removes environment"
+        printf "  %-14s  %s\n" "use <NAME>" "Initializes a TMUX session with selected environment"
+        printf "  %-14s  %s\n" "version" "Prints version information"
+        printf "  %-14s  %s\n" "help" "Prints this help message"
+        ;;
+esac

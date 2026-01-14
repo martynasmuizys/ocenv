@@ -12,6 +12,11 @@ sanity_check() {
         echo "==> fzf is not installed. Please install it first."
         exit 1
     fi
+
+    if ! command -v timeout &>/dev/null; then
+        echo "==> timeout is not installed. If you're on macos install coreutils first."
+        exit 1
+    fi
 }
 
 write_config() {
@@ -61,10 +66,18 @@ info() {
         echo "==> Environment '$name' does not exist"
         return
     fi
+    echo ":: $name"
     local ctx=$(cat "$cfg" | grep -F "current-context" | cut -d ' ' -f2)
-    printf "==> %-10s %s\n" "Cluster:" $(echo "$ctx" | cut -d '/' -f2)
-    printf "==> %-10s %s\n" "User:" $(echo "$ctx" | cut -d '/' -f3)
-    printf "==> %-10s %s\n" "Namespace:" $(echo "$ctx" | cut -d '/' -f1)
+    local token_expires=$(cat "$cfg" | grep -F "ocenv-token-expires" | cut -d ' ' -f2)
+    if [[ -z $token_expires ]]; then
+        hours_left="-"
+    else
+        hours_left=$(expr $(expr "$token_expires" - $(date +%s)) / 3600)
+    fi
+    printf "==> %-20s %s\n" "Cluster:" $(echo "$ctx" | cut -d '/' -f2)
+    printf "==> %-20s %s\n" "User:" $(echo "$ctx" | cut -d '/' -f3)
+    printf "==> %-20s %s hours\n" "Session expires in:" $hours_left
+    printf "==> %-20s %s\n" "Namespace:" $(echo "$ctx" | cut -d '/' -f1)
 }
 
 use() {
@@ -79,11 +92,22 @@ use() {
         fi
     fi
 
-    oc whoami --kubeconfig "$cfg" &> /dev/null
+    local token_expires=$(cat "$cfg" | grep -F "ocenv-token-expires" | cut -d ' ' -f2)
+    if [[ -z "$token_expires" ]]; then
+        oc whoami --kubeconfig "$cfg" &> /dev/null
+    else
+        local hours_left=$(expr $(expr "$token_expires" - $(date +%s)) / 3600)
+    fi
 
-    if [[ $? != 0 ]]; then
+    if [[ $? != 0 || hours_left < 8 ]]; then
         echo "==> Session expired. Trying to authenticate via browser..."
-        oc login -w --kubeconfig "$cfg" &> /dev/null
+        timeout 30 oc login -w --kubeconfig "$cfg" &> /dev/null
+
+        if [[ $? != 0 ]]; then
+            echo "==> Timeout time reached. Exiting..."
+            exit 1
+        fi
+        echo "ocenv-token-expires: $(expr $(date +%s) + 3600 \* 24)" >> "$cfg"
     fi
 
     if ! is_tmux_running || ! has_session "$name"; then
@@ -91,7 +115,8 @@ use() {
         tmux new-session -ds "$name" -t "__ocenv" -c $PWD -e KUBECONFIG="$cfg"
     fi
 
-    if [[ $(tmux display-message -p '#S') != "$name" ]]; then
+    local current_session=$(tmux display-message -p '#S')
+    if [[ "$current_session" != "$name" ]]; then
         switch_to "$name"
     else
         echo "==> Environment '$name' is already active"
@@ -140,8 +165,7 @@ list() {
 }
 
 get_sessions() {
-    local sessions=$(tmux list-sessions -F '#S #{session_group}' | grep '__ocenv' | cut -d ' ' -f1)
-    echo "$sessions"
+    tmux list-sessions -F '#S #{session_group}' | grep '__ocenv' | cut -d ' ' -f1
 }
 
 # MAIN

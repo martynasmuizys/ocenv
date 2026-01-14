@@ -34,6 +34,7 @@ ocenv info <name>
 ```
 
 ## TODO
+- better handling of subcommands. also code is chopped.
 - perhaps add kubectl support or sum
 - completions mhmhmhm
 

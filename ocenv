@@ -99,6 +99,11 @@ remove() {
 }
 
 list() {
+    if ! is_tmux_running; then
+        echo "==> No running sessions found"
+        return
+    fi
+
     local sessions=$(get_sessions)
 
     if [[ -n "$sessions" ]]; then
@@ -155,7 +160,7 @@ case "$subcommand" in
         echo "ocenv v$VERSION"
         ;;
     *)
-        printf "Usage: ocenv [SUBCOMMAND] [OPTIONS]\n"
+        printf "Usage: ocenv [SUBCOMMAND]\n"
         printf "Subcommands:\n"
         printf "  %-14s  %s\n" "create <NAME>" "Creates a new environment for a cluster"
         printf "  %-14s  %s\n" "list" "Lists all running sessions for configured environments"

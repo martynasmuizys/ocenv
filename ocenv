@@ -56,6 +56,17 @@ create() {
 
 }
 
+info() {
+    if ! [[ -f $cfg ]]; then
+        echo "==> Environment '$name' does not exist"
+        return
+    fi
+    local ctx=$(cat "$cfg" | grep -F "current-context" | cut -d ' ' -f2)
+    printf "==> %-10s %s\n" "Cluster:" $(echo "$ctx" | cut -d '/' -f2)
+    printf "==> %-10s %s\n" "User:" $(echo "$ctx" | cut -d '/' -f3)
+    printf "==> %-10s %s\n" "Namespace:" $(echo "$ctx" | cut -d '/' -f1)
+}
+
 use() {
     if ! [[ -f $cfg ]]; then
         read -n 1 -rp "==> Configuration for cluster '$name' does not exist. Create? [y/N] "
@@ -99,25 +110,36 @@ remove() {
 }
 
 list() {
-    if ! is_tmux_running; then
-        echo "==> No running sessions found"
+    if [[ -n "$1" && "$1" == "--active" ]]; then
+        if ! is_tmux_running; then
+            echo "==> No running sessions found"
+            return
+        fi
+        local sessions=$(get_sessions)
+
+        if [[ -n "$sessions" ]]; then
+            echo ":: Sessions"
+            for s in "$sessions"; do
+                echo "==> $s"
+            done
+        else
+            echo "==> No running sessions found"
+        fi
         return
     fi
 
-    local sessions=$(get_sessions)
-
-    if [[ -n "$sessions" ]]; then
-        echo ":: Sessions"
-        for s in "$sessions"; do
-            echo "==> $s"
+    local envs=$(find ~/.kube/ocenv/ -name '*.yaml' -exec sh -c 'basename ${1%.*}' _ {} \;)
+    if [[ -n "$envs" ]]; then
+        echo ":: Environments"
+        for e in "$envs"; do
+            echo "==> $e"
         done
     else
-        echo "==> No running sessions found"
+        echo "==> No environments found"
     fi
 }
 
 get_sessions() {
-    local envs=$(find ~/.kube/ocenv/ -name '*.yaml' -exec sh -c 'basename ${1%.*}' _ {} \;)
     local sessions=$(tmux list-sessions -F '#S #{session_group}' | grep '__ocenv' | cut -d ' ' -f1)
     echo "$sessions"
 }
@@ -147,6 +169,9 @@ case "$subcommand" in
     "create")
         create
         ;;
+    "info")
+        info
+        ;;
     "rm")
         remove
         ;;
@@ -154,7 +179,7 @@ case "$subcommand" in
         use
         ;;
     "list")
-        list
+        list "$2"
         ;;
     "version")
         echo "ocenv v$VERSION"

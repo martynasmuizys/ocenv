@@ -122,6 +122,10 @@ sanity_check
 subcommand=$1
 
 if [[ -z "$subcommand" ]]; then
+    if ! is_tmux_running; then
+        echo "==> No running sessions found"
+        exit 0
+    fi
     current_session=$(tmux display-message -p '#S')
     selected=$(get_sessions | grep -xFv "$current_session" | fzf)
     switch_to "$selected"

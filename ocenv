@@ -101,7 +101,8 @@ use() {
 
     if [[ $? != 0 || hours_left < 8 ]]; then
         echo "==> Session expired. Trying to authenticate via browser..."
-        timeout 30 oc login -w --kubeconfig "$cfg" &> /dev/null
+        # a minute to login should be plenty
+        timeout 60 oc login -w --kubeconfig "$cfg" &> /dev/null
 
         if [[ $? != 0 ]]; then
             echo "==> Timeout time reached. Exiting..."

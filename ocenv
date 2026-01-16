@@ -1,29 +1,62 @@
 #!/usr/bin/env bash
 
+# idk why i wrote this in bash but yeah aboom
+
 VERSION=0.1.0
 
-sanity_check() {
-    if ! command -v tmux &>/dev/null; then
-        echo "==> tmux is not installed. Please install it first."
-        exit 1
-    fi
-
-    if ! command -v fzf &>/dev/null; then
-        echo "==> fzf is not installed. Please install it first."
-        exit 1
-    fi
-
-    if ! command -v timeout &>/dev/null; then
-        echo "==> timeout is not installed. If you're on macos install coreutils first."
-        exit 1
-    fi
+help() {
+    printf "Usage: ocenv [SUBCOMMAND] [OPTIONS]\n"
+    printf "Subcommands:\n"
+    printf "  %-14s  %s\n" "create <NAME>" "Creates a new environment for a cluster"
+    printf "  %-14s  %s\n" "info" "Prints information about environment"
+    printf "  %-14s  %s\n" "list" "Lists all running sessions for configured environments"
+    printf "  %-14s  %s\n" "rm <NAME>" "Removes environment"
+    printf "  %-14s  %s\n" "use <NAME>" "Initializes a TMUX session with selected environment"
+    printf "Options:\n"
+    printf "  %-14s  %s\n" "-h, --help" "Prints this help message"
+    printf "  %-14s  %s\n" "-v, --version" "Prints version information"
 }
+
+opts=()
+
+while (( $# )); do
+    case "$1" in
+        -h | --help) help; exit 0 ;;
+        -v | --version) echo $VERSION; exit 0 ;;
+        *) subcommand="$1"; shift; break ;;
+    esac
+done
+
+sanity_check() {
+    local required=(tmux fzf yq timeout)
+
+    for c in $required; do
+        if ! command -v $c &> /dev/null; then
+            echo "==> $c is not installed. Please install it first."
+            exit 1
+        fi
+    done
+}
+sanity_check
 
 write_config() {
     read -rp "==> Enter cluster URL: " url
     echo "==> Trying to authenticate via browser..."
-    oc login -w --server "$url" --kubeconfig "$1" &> /dev/null
+    oc login -w --server "${url// /}" --kubeconfig "$1" &> /dev/null
     echo "==> Cluster configuration created at $1"
+}
+
+check_name() {
+    name="$1"
+    if [[ -z "$name" ]]; then
+        read -rp "==> Enter cluster name: " name
+    fi
+    cfg="$HOME/.kube/ocenv/$name.yaml"
+
+}
+
+get_sessions() {
+    tmux list-sessions -F '#S' | grep '_ocenv_'
 }
 
 is_tmux_running() {
@@ -41,13 +74,14 @@ has_session() {
 
 switch_to() {
     if [[ -z $TMUX ]]; then
-        tmux attach-session -t "$1"
+        tmux attach-session -t "_ocenv_$1"
     else
-        tmux switch-client -t "$1"
+        tmux switch-client -t "_ocenv_$1"
     fi
 }
 
 create() {
+    check_name $1
     if [[ -f "$cfg" ]]; then
         read -n 1 -rp "==> Configuration for cluster '$name' already exists. Overwrite? [y/N] "
         echo
@@ -62,22 +96,116 @@ create() {
 }
 
 info() {
+    local envs=()
+    if [[ -n "$1" ]]; then
+        check_name $1
+        if ! [[ -f $cfg ]]; then
+            echo "==> Environment '$name' does not exist"
+            return
+        fi
+        envs+=($cfg)
+    else
+        saved_envs=$(list | cut -d ' ' -f2)
+        for e in $saved_envs; do
+            envs+=("$HOME/.kube/ocenv/$e.yaml")
+        done
+    fi
+
+    for e in $envs; do
+        local n=$(basename ${e%.*})
+        echo ":: $n"
+        local ctx=$(yq '.current-context' $e)
+        local token_expires=$(yq '.ocenv-token-expires' $e)
+        if [[ -z $token_expires ]]; then
+            hours_left="-"
+        else
+            hours_left=$(expr $(expr "$token_expires" - $(date +%s)) / 3600)
+        fi
+        printf "==> %-20s %s\n" "Cluster:" $(echo "$ctx" | cut -d '/' -f2)
+        printf "==> %-20s %s\n" "User:" $(echo "$ctx" | cut -d '/' -f3)
+        printf "==> %-20s %s hours\n" "Session expires in:" $hours_left
+        printf "==> %-20s %s\n" "Namespace:" $(echo "$ctx" | cut -d '/' -f1)
+    done
+}
+
+_list_active() {
+    if ! is_tmux_running; then
+        echo "==> No running sessions found"
+        return
+    fi
+    local sessions=$(get_sessions)
+
+    if [[ -n "$sessions" ]]; then
+        echo ":: Sessions"
+        for s in "$sessions"; do
+            echo "==> $s"
+        done
+    else
+        echo "==> No running sessions found"
+    fi
+}
+
+_list_all() {
+    local envs=$(find ~/.kube/ocenv/ -name '*.yaml' -exec sh -c 'basename ${1%.*}' _ {} \;)
+    if [[ -n "$envs" ]]; then
+        echo ":: Environments"
+        for e in "$envs"; do
+            echo "==> $e"
+        done
+    else
+        echo "==> No environments found"
+    fi
+}
+
+_list_help() {
+    printf "Usage: ocenv list [OPTIONS]\n"
+    printf "Options:\n"
+    printf "  %-14s  %s\n" "-a, --active" "Lists all active sessions"
+    printf "  %-14s  %s\n" "-h, --help" "Prints this help message"
+}
+
+list() {
+    local active=0
+
+    local list_opts=()
+    while (( $# )); do
+        case "$1" in
+            --help) list_opts+=("-h"); shift ;;
+            --active) list_opts+=("-a"); shift ;;
+            --) list_opts+=("--"); shift; list_opts+=("$@"); set -- ;;
+            *) list_opts+=("$1"); shift ;;
+        esac
+    done
+    set -- "${list_opts[@]}"
+
+    while getopts ":ah" opt; do
+        case $opt in
+            a) active=1 ;;
+            h) _list_help; return ;;
+            \?)
+                _list_help
+                echo "Invalid option: -$OPTARG" >&2
+                return 1
+                ;;
+        esac
+    done
+    shift $((OPTIND -1))
+
+    if [ $active -eq 1 ]; then
+        _list_active
+    else
+        _list_all
+    fi
+}
+
+remove() {
+    # surely this is safe?
     if ! [[ -f $cfg ]]; then
         echo "==> Environment '$name' does not exist"
         return
     fi
-    echo ":: $name"
-    local ctx=$(cat "$cfg" | grep -F "current-context" | cut -d ' ' -f2)
-    local token_expires=$(cat "$cfg" | grep -F "ocenv-token-expires" | cut -d ' ' -f2)
-    if [[ -z $token_expires ]]; then
-        hours_left="-"
-    else
-        hours_left=$(expr $(expr "$token_expires" - $(date +%s)) / 3600)
-    fi
-    printf "==> %-20s %s\n" "Cluster:" $(echo "$ctx" | cut -d '/' -f2)
-    printf "==> %-20s %s\n" "User:" $(echo "$ctx" | cut -d '/' -f3)
-    printf "==> %-20s %s hours\n" "Session expires in:" $hours_left
-    printf "==> %-20s %s\n" "Namespace:" $(echo "$ctx" | cut -d '/' -f1)
+    rm "$cfg"
+        echo "==> Environment '$name' was removed"
 }
 
 use() {
@@ -95,28 +223,30 @@ use() {
     local token_expires=$(cat "$cfg" | grep -F "ocenv-token-expires" | cut -d ' ' -f2)
     if [[ -z "$token_expires" ]]; then
         oc whoami --kubeconfig "$cfg" &> /dev/null
+        rc=$?
     else
         local hours_left=$(expr $(expr "$token_expires" - $(date +%s)) / 3600)
     fi
 
-    if [[ $? != 0 || hours_left < 8 ]]; then
+    if [[ $rc -ne 0 || $hours_left -lt 8 ]]; then
         echo "==> Session expired. Trying to authenticate via browser..."
         # a minute to login should be plenty
         timeout 60 oc login -w --kubeconfig "$cfg" &> /dev/null
 
-        if [[ $? != 0 ]]; then
+        if [[ $? -ne 0 ]]; then
             echo "==> Timeout time reached. Exiting..."
             exit 1
         fi
         echo "ocenv-token-expires: $(expr $(date +%s) + 3600 \* 24)" >> "$cfg"
     fi
 
+    local current_session=$(tmux display-message -p '#S')
     if ! is_tmux_running || ! has_session "$name"; then
-        # tagging session with __ocenv
-        tmux new-session -ds "$name" -t "__ocenv" -c $PWD -e KUBECONFIG="$cfg"
+        tmux new-session -ds "_ocenv_$name" -c $PWD -e KUBECONFIG="$cfg"
+        # should work
+        current_session=""
     fi
 
-    local current_session=$(tmux display-message -p '#S')
     if [[ "$current_session" != "$name" ]]; then
         switch_to "$name"
     else
@@ -125,98 +255,41 @@ use() {
 
 }
 
-remove() {
-    # surely this is safe?
-    if ! [[ -f $cfg ]]; then
-        echo "==> Environment '$name' does not exist"
-        return
-    fi
-    rm "$cfg"
-        echo "==> Environment '$name' was removed"
-}
-
-list() {
-    if [[ -n "$1" && "$1" == "--active" ]]; then
-        if ! is_tmux_running; then
-            echo "==> No running sessions found"
-            return
-        fi
-        local sessions=$(get_sessions)
-
-        if [[ -n "$sessions" ]]; then
-            echo ":: Sessions"
-            for s in "$sessions"; do
-                echo "==> $s"
-            done
-        else
-            echo "==> No running sessions found"
-        fi
-        return
-    fi
-
-    local envs=$(find ~/.kube/ocenv/ -name '*.yaml' -exec sh -c 'basename ${1%.*}' _ {} \;)
-    if [[ -n "$envs" ]]; then
-        echo ":: Environments"
-        for e in "$envs"; do
-            echo "==> $e"
-        done
-    else
-        echo "==> No environments found"
-    fi
-}
-
-get_sessions() {
-    tmux list-sessions -F '#S #{session_group}' | grep '__ocenv' | cut -d ' ' -f1
-}
-
-# MAIN
-sanity_check
-subcommand=$1
-
 if [[ -z "$subcommand" ]]; then
     if ! is_tmux_running; then
         echo "==> No running sessions found"
         exit 0
     fi
-    current_session=$(tmux display-message -p '#S')
-    selected=$(get_sessions | grep -xFv "$current_session" | fzf)
-    switch_to "$selected"
-    exit 0
-fi
 
-if [[ "$subcommand" != "help" && "$subcommand" != "list" && "$subcommand" != "version" ]]; then
-    name="$2"
-    [[ -z "$name" ]] && read -rp "==> Enter cluster name: " name
-    cfg="$HOME/.kube/ocenv/$name.yaml"
+    if [[ -n "${TMUX}" ]]; then
+        current_session=$(tmux display-message -p '#S')
+    else
+        current_session=""
+    fi
+    # this will buhg out
+    selected=$(get_sessions | grep -xFv "$current_session" | fzf)
+
+    if [[ -n $selected ]]; then
+        switch_to "${selected/_ocenv_/}"
+    fi
+    exit 0
 fi
 
 case "$subcommand" in
     "create")
-        create
+        create "$@"
         ;;
     "info")
-        info
-        ;;
-    "rm")
-        remove
-        ;;
-    "use")
-        use
+        info "$@"
         ;;
     "list")
-        list "$2"
+        list "$@"
         ;;
-    "version")
-        echo "ocenv v$VERSION"
+    "rm")
+        remove "$@"
         ;;
-    *)
-        printf "Usage: ocenv [SUBCOMMAND]\n"
-        printf "Subcommands:\n"
-        printf "  %-14s  %s\n" "create <NAME>" "Creates a new environment for a cluster"
-        printf "  %-14s  %s\n" "list" "Lists all running sessions for configured environments"
-        printf "  %-14s  %s\n" "rm <NAME>" "Removes environment"
-        printf "  %-14s  %s\n" "use <NAME>" "Initializes a TMUX session with selected environment"
-        printf "  %-14s  %s\n" "version" "Prints version information"
-        printf "  %-14s  %s\n" "help" "Prints this help message"
+    "use")
+        use "$@"
         ;;
+    *) help
 esac

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# idk why i wrote this in bash but yeah aboom
+# idk why bash but yeah aboom
 
 VERSION=0.1.0
 
@@ -56,7 +56,7 @@ check_name() {
 }
 
 get_sessions() {
-    tmux list-sessions -F '#S' | grep '_ocenv_'
+    tmux list-sessions -F '#S' 2> /dev/null | grep '_ocenv_'
 }
 
 is_tmux_running() {
@@ -128,6 +128,13 @@ info() {
     done
 }
 
+_list_helper() {
+    local entries=$1
+    for e in $entries; do
+        echo "$e"
+    done
+}
+
 _list_active() {
     if ! is_tmux_running; then
         echo "==> No running sessions found"
@@ -137,9 +144,7 @@ _list_active() {
 
     if [[ -n "$sessions" ]]; then
         echo ":: Sessions"
-        for s in "$sessions"; do
-            echo "==> $s"
-        done
+        _list_helper "$sessions"
     else
         echo "==> No running sessions found"
     fi
@@ -149,9 +154,7 @@ _list_all() {
     local envs=$(find ~/.kube/ocenv/ -name '*.yaml' -exec sh -c 'basename ${1%.*}' _ {} \;)
     if [[ -n "$envs" ]]; then
         echo ":: Environments"
-        for e in "$envs"; do
-            echo "==> $e"
-        done
+        _list_helper "$envs"
     else
         echo "==> No environments found"
     fi
@@ -200,15 +203,17 @@ list() {
 
 remove() {
     # surely this is safe?
+    check_name "$1"
     if ! [[ -f $cfg ]]; then
         echo "==> Environment '$name' does not exist"
         return
     fi
     rm "$cfg"
-        echo "==> Environment '$name' was removed"
+    echo "==> Environment '$name' was removed"
 }
 
 use() {
+    check_name "$1"
     if ! [[ -f $cfg ]]; then
         read -n 1 -rp "==> Configuration for cluster '$name' does not exist. Create? [y/N] "
         echo
@@ -220,7 +225,7 @@ use() {
         fi
     fi
 
-    local token_expires=$(cat "$cfg" | grep -F "ocenv-token-expires" | cut -d ' ' -f2)
+    local token_expires=$(yq '.ocenv-token-expires' $cfg)
     if [[ -z "$token_expires" ]]; then
         oc whoami --kubeconfig "$cfg" &> /dev/null
         rc=$?
@@ -237,7 +242,7 @@ use() {
             echo "==> Timeout time reached. Exiting..."
             exit 1
         fi
-        echo "ocenv-token-expires: $(expr $(date +%s) + 3600 \* 24)" >> "$cfg"
+        yq -i ".ocenv-token-expires = $(expr $(date +%s) + 3600 \* 24)" "$cfg"
     fi
 
     local current_session=$(tmux display-message -p '#S')
@@ -256,7 +261,8 @@ use() {
 }
 
 if [[ -z "$subcommand" ]]; then
-    if ! is_tmux_running; then
+    sessions=$(get_sessions)
+    if ! is_tmux_running || [[ -z "$sessions" ]]; then
         echo "==> No running sessions found"
         exit 0
     fi

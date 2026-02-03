@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+sanity_check() {
+    local required=(tmux fzf yq timeout)
+
+    for c in $required; do
+        if ! command -v $c &> /dev/null; then
+            echo "==> $c is not installed. Please install it first."
+            exit 1
+        fi
+    done
+}
+sanity_check
+
+write_config() {
+    read -rp "==> Enter cluster URL: " url
+    echo "==> Trying to authenticate via browser..."
+    oc login -w --server "${url// /}" --kubeconfig "$1" &> /dev/null
+    echo "==> Cluster configuration created at $1"
+}
+
+check_name() {
+    name="$1"
+    if [[ -z "$name" ]]; then
+        read -rp "==> Enter cluster name: " name
+    fi
+    cfg="$HOME/.kube/ocenv/$name.yaml"
+
+}
+
+get_sessions() {
+    tmux list-sessions -F '#S' 2> /dev/null | grep '_ocenv_'
+}
+
+is_tmux_running() {
+    local tmux_running=$(pgrep tmux)
+
+    if [[ -z $TMUX ]] && [[ -z $tmux_running ]]; then
+        return 1
+    fi
+    return 0
+}
+
+has_session() {
+    tmux list-sessions | grep -q "^$1:"
+}
+
+switch_to() {
+    if [[ -z $TMUX ]]; then
+        tmux attach-session -t "_ocenv_$1"
+    else
+        tmux switch-client -t "_ocenv_$1"
+    fi
+}

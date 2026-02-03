@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+# idk why bash but yeah aboom
+
+VERSION=0.1.0
+
+source ./commands
+source ./helpers
+
+help() {
+    printf "Usage: ocenv [SUBCOMMAND] [OPTIONS]\n"
+    printf "Subcommands:\n"
+    printf "  %-14s  %s\n" "create <NAME>" "Creates a new environment for a cluster"
+    printf "  %-14s  %s\n" "info" "Prints information about environment"
+    printf "  %-14s  %s\n" "list" "Lists all active sessions for configured environments"
+    printf "  %-14s  %s\n" "rm <NAME>" "Removes environment"
+    printf "  %-14s  %s\n" "use <NAME>" "Initializes a TMUX session with selected environment"
+    printf "Options:\n"
+    printf "  %-14s  %s\n" "-h, --help" "Prints this help message"
+    printf "  %-14s  %s\n" "-v, --version" "Prints version information"
+}
+
+opts=()
+
+while (( $# )); do
+    case "$1" in
+        -h | --help) help; exit 0 ;;
+        -v | --version) echo $VERSION; exit 0 ;;
+        *) subcommand="$1"; shift; break ;;
+    esac
+done
+
+if [[ -z "$subcommand" ]]; then
+    sessions=$(get_sessions)
+    if ! is_tmux_running || [[ -z "$sessions" ]]; then
+        echo "==> No active sessions found"
+        exit 0
+    fi
+
+    if [[ -n "${TMUX}" ]]; then
+        current_session=$(tmux display-message -p '#S')
+    else
+        current_session=""
+    fi
+    # this will buhg out
+    selected=$(get_sessions | grep -xFv "$current_session" | fzf)
+
+    if [[ -n $selected ]]; then
+        switch_to "${selected/_ocenv_/}"
+    fi
+    exit 0
+fi
+
+case "$subcommand" in
+    "create")
+        create "$@"
+        ;;
+    "info")
+        info "$@"
+        ;;
+    "list")
+        list "$@"
+        ;;
+    "rm")
+        remove "$@"
+        ;;
+    "use")
+        use "$@"
+        ;;
+    *) help
+esac

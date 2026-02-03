@@ -1,85 +1,5 @@
 #!/usr/bin/env bash
 
-# idk why bash but yeah aboom
-
-VERSION=0.1.0
-
-help() {
-    printf "Usage: ocenv [SUBCOMMAND] [OPTIONS]\n"
-    printf "Subcommands:\n"
-    printf "  %-14s  %s\n" "create <NAME>" "Creates a new environment for a cluster"
-    printf "  %-14s  %s\n" "info" "Prints information about environment"
-    printf "  %-14s  %s\n" "list" "Lists all active sessions for configured environments"
-    printf "  %-14s  %s\n" "rm <NAME>" "Removes environment"
-    printf "  %-14s  %s\n" "use <NAME>" "Initializes a TMUX session with selected environment"
-    printf "Options:\n"
-    printf "  %-14s  %s\n" "-h, --help" "Prints this help message"
-    printf "  %-14s  %s\n" "-v, --version" "Prints version information"
-}
-
-opts=()
-
-while (( $# )); do
-    case "$1" in
-        -h | --help) help; exit 0 ;;
-        -v | --version) echo $VERSION; exit 0 ;;
-        *) subcommand="$1"; shift; break ;;
-    esac
-done
-
-sanity_check() {
-    local required=(tmux fzf yq timeout)
-
-    for c in $required; do
-        if ! command -v $c &> /dev/null; then
-            echo "==> $c is not installed. Please install it first."
-            exit 1
-        fi
-    done
-}
-sanity_check
-
-write_config() {
-    read -rp "==> Enter cluster URL: " url
-    echo "==> Trying to authenticate via browser..."
-    oc login -w --server "${url// /}" --kubeconfig "$1" &> /dev/null
-    echo "==> Cluster configuration created at $1"
-}
-
-check_name() {
-    name="$1"
-    if [[ -z "$name" ]]; then
-        read -rp "==> Enter cluster name: " name
-    fi
-    cfg="$HOME/.kube/ocenv/$name.yaml"
-
-}
-
-get_sessions() {
-    tmux list-sessions -F '#S' 2> /dev/null | grep '_ocenv_'
-}
-
-is_tmux_running() {
-    local tmux_running=$(pgrep tmux)
-
-    if [[ -z $TMUX ]] && [[ -z $tmux_running ]]; then
-        return 1
-    fi
-    return 0
-}
-
-has_session() {
-    tmux list-sessions | grep -q "^$1:"
-}
-
-switch_to() {
-    if [[ -z $TMUX ]]; then
-        tmux attach-session -t "_ocenv_$1"
-    else
-        tmux switch-client -t "_ocenv_$1"
-    fi
-}
-
 create() {
     check_name $1
     if [[ -f "$cfg" ]]; then
@@ -130,7 +50,7 @@ info() {
 
         printf "==> %-20s %s\n" "Cluster:" $(echo "$ctx" | cut -d '/' -f2)
         printf "==> %-20s %s\n" "User:" $(echo "$ctx" | cut -d '/' -f3)
-        printf "==> %-20s %s\n" "Session expires in:" "$hours_left"
+        printf "==> %-20s %s\n" "Session expires in:" $hours_left
         printf "==> %-20s %s\n" "Namespace:" $(echo "$ctx" | cut -d '/' -f1)
     done
 }
@@ -269,42 +189,4 @@ use() {
 
 }
 
-if [[ -z "$subcommand" ]]; then
-    sessions=$(get_sessions)
-    if ! is_tmux_running || [[ -z "$sessions" ]]; then
-        echo "==> No active sessions found"
-        exit 0
-    fi
 
-    if [[ -n "${TMUX}" ]]; then
-        current_session=$(tmux display-message -p '#S')
-    else
-        current_session=""
-    fi
-    # this will buhg out
-    selected=$(get_sessions | grep -xFv "$current_session" | fzf)
-
-    if [[ -n $selected ]]; then
-        switch_to "${selected/_ocenv_/}"
-    fi
-    exit 0
-fi
-
-case "$subcommand" in
-    "create")
-        create "$@"
-        ;;
-    "info")
-        info "$@"
-        ;;
-    "list")
-        list "$@"
-        ;;
-    "rm")
-        remove "$@"
-        ;;
-    "use")
-        use "$@"
-        ;;
-    *) help
-esac

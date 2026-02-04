@@ -1,7 +1,9 @@
 package command
 
 import (
+	"os"
 	"os/exec"
+	"time"
 
 	"github.com/martynasmuizys/ocenv/internal/util"
 )
@@ -11,6 +13,14 @@ type OcCommand int
 const (
 	Login OcCommand = iota
 	Whoami
+)
+
+type TmuxCommand int
+
+const (
+	NewSession TmuxCommand = iota
+	Switch
+	ListSessions
 )
 
 type Command struct {
@@ -45,13 +55,31 @@ func (c *Command) TermRestore() error {
 	return nil
 }
 
-func (c *Command) Tmux(args ...string) error {
-	err := exec.Command("tmux", args...).Run()
-	if err != nil {
-		return &util.CommandError{Cmd: "tmux", Msg: err.Error()}
+func (c *Command) Tmux(tc TmuxCommand, args ...string) ([]byte, error) {
+	var cmd *exec.Cmd
+	name := "_ocenv_" + args[0]
+
+	switch tc {
+	case NewSession:
+		cmd = exec.Command(
+			"tmux", "new-session", "-ds", name, "-e", "KUBECONFIG="+c.kubeConfig)
+	case Switch:
+		if len(os.Getenv("TMUX")) == 0 {
+			cmd = exec.Command("tmux", "attach-session", "-t", name)
+		} else {
+			cmd = exec.Command("tmux", "switch-client", "-t", name)
+		}
+	case ListSessions:
+		cmd = exec.Command("tmux", "list-sessions")
 	}
 
-	return nil
+	out, err := cmd.Output()
+
+	if err != nil {
+		return nil, &util.CommandError{Cmd: "tmux", Msg: err.Error()}
+	}
+
+	return out, nil
 }
 
 func (c *Command) Oc(occ OcCommand, args ...string) error {
@@ -72,4 +100,21 @@ func (c *Command) Oc(occ OcCommand, args ...string) error {
 	}
 
 	return nil
+}
+
+func (c *Command) OcCheckToken(kubeCfg *util.KubeConfig) bool {
+	err := c.Oc(Whoami, c.kubeConfig)
+	if err != nil {
+		// not an error. just checking whether token is valid
+		return false
+	}
+
+	tokenExpires := kubeCfg.OcenvTokenExpires
+
+	if ((int64(tokenExpires) - time.Now().Unix()) / 3600) < 8 {
+		// 8 hour before expiration seems ok
+		return false
+	}
+
+	return true
 }

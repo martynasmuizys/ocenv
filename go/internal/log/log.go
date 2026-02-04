@@ -5,8 +5,9 @@ import (
 	"os"
 )
 
-func Hprintf(format string, args ...any) {
-	fmt.Printf(":: "+format, args)
+func Hprint(args ...any) {
+	fmt.Printf(":: ")
+	fmt.Println(args...)
 }
 
 func Printf(format string, args ...any) {

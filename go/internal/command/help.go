@@ -2,17 +2,40 @@ package command
 
 import (
 	"fmt"
+	"strings"
 )
 
+func Version() {
+	fmt.Println("ocenv(go) 0.1.0")
+}
+
 func Help() {
-	fmt.Printf("Usage: ocenv [SUBCOMMAND] [OPTIONS]\n")
-	fmt.Printf("Subcommands:\n")
-	fmt.Printf("  %-14s  %s\n", "create <NAME>", "Creates a new environment for a cluster")
-	fmt.Printf("  %-14s  %s\n", "info", "Prints information about environment")
-	fmt.Printf("  %-14s  %s\n", "list", "Lists all active sessions for configured environments")
-	fmt.Printf("  %-14s  %s\n", "rm <NAME>", "Removes environment")
-	fmt.Printf("  %-14s  %s\n", "use <NAME>", "Initializes a TMUX session with selected environment")
-	fmt.Printf("Options:\n")
-	fmt.Printf("  %-14s  %s\n", "-h, --help", "Prints this help message")
-	fmt.Printf("  %-14s  %s\n", "-v, --version", "Prints version information")
+	var b strings.Builder
+	b.WriteString("Usage:\n")
+	b.WriteString("  ocenv [SUBCOMMAND] [OPTIONS]\n")
+	b.WriteRune('\n')
+	b.WriteString("Subcommands:\n")
+	b.WriteString(fmt.Sprintf("  %-14s  %s\n", "create <NAME>", "Creates a new environment for a cluster"))
+	b.WriteString(fmt.Sprintf("  %-14s  %s\n", "info <NAME>", "Prints information about environment"))
+	b.WriteString(fmt.Sprintf("  %-14s  %s\n", "list", "Lists all active sessions for configured environments"))
+	b.WriteString(fmt.Sprintf("  %-14s  %s\n", "rm <NAME>", "Removes environment"))
+	b.WriteString(fmt.Sprintf("  %-14s  %s\n", "use <NAME>", "Initializes a TMUX session with selected environment"))
+	b.WriteRune('\n')
+	b.WriteString("Options:\n")
+	b.WriteString(fmt.Sprintf("  %-14s  %s\n", "-h, --help", "Prints this help message"))
+	b.WriteString(fmt.Sprintf("  %-14s  %s\n", "-v, --version", "Prints version information"))
+
+	fmt.Print(b.String())
+}
+
+func ListHelp() {
+	var b strings.Builder
+
+	b.WriteString("Usage: ocenv [SUBCOMMAND] [OPTIONS]\n")
+	b.WriteRune('\n')
+	b.WriteString("Options:\n")
+	b.WriteString(fmt.Sprintf("  %-14s  %s\n", "-a, --active", "Lists all active sessions"))
+	b.WriteString(fmt.Sprintf("  %-14s  %s\n", "-h, --help", "Prints this help message"))
+
+	fmt.Print(b.String())
 }

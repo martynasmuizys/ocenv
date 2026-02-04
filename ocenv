@@ -5,14 +5,15 @@
 VERSION=0.1.0
 
 help() {
-    printf "Usage: ocenv [SUBCOMMAND] [OPTIONS]\n"
-    printf "Subcommands:\n"
+    printf "Usage:\n"
+    printf "  ocenv [SUBCOMMAND] [OPTIONS]\n"
+    printf "\nSubcommands:\n"
     printf "  %-14s  %s\n" "create <NAME>" "Creates a new environment for a cluster"
     printf "  %-14s  %s\n" "info" "Prints information about environment"
     printf "  %-14s  %s\n" "list" "Lists all active sessions for configured environments"
     printf "  %-14s  %s\n" "rm <NAME>" "Removes environment"
     printf "  %-14s  %s\n" "use <NAME>" "Initializes a TMUX session with selected environment"
-    printf "Options:\n"
+    printf "\nOptions:\n"
     printf "  %-14s  %s\n" "-h, --help" "Prints this help message"
     printf "  %-14s  %s\n" "-v, --version" "Prints version information"
 }
@@ -22,7 +23,7 @@ opts=()
 while (( $# )); do
     case "$1" in
         -h | --help) help; exit 0 ;;
-        -v | --version) echo $VERSION; exit 0 ;;
+        -v | --version) echo "ocenv(bash) $VERSION"; exit 0 ;;
         *) subcommand="$1"; shift; break ;;
     esac
 done
@@ -96,43 +97,28 @@ create() {
 }
 
 info() {
-    local envs=()
-    if [[ -n "$1" ]]; then
-        check_name $1
-        if ! [[ -f $cfg ]]; then
-            echo "==> Environment '$name' does not exist"
-            return
-        fi
-        envs+=($cfg)
-    else
-        local saved_envs=$(find ~/.kube/ocenv/ -name '*.yaml' -exec sh -c 'basename ${1%.*}' _ {} \;)
-        # saved_envs=$(list | cut -d ' ' -f2)
-        for e in $saved_envs; do
-            envs+=("$HOME/.kube/ocenv/$e.yaml")
-        done
+    check_name $1
+    if ! [[ -f $cfg ]]; then
+        echo "==> Environment '$name' does not exist"
+        return
     fi
-
-    for e in $envs; do
-        local n=$(basename ${e%.*})
-        echo ":: $n"
-        local ctx=$(yq '.current-context' $e)
-        local token_expires=$(yq '.ocenv-token-expires' $e)
-        if [[ -z $token_expires ]]; then
-            hours_left="-"
+    echo ":: $name"
+    local ctx=$(yq '.current-context' $cfg)
+    local token_expires=$(yq '.ocenv-token-expires' $cfg)
+    if [[ $token_expires == "null" ]]; then
+        hours_left="expired"
+    else
+        hours_left=$(expr $(expr "$token_expires" - $(date +%s)) / 3600)
+        if [[ $hours_left -lt 0 ]]; then
+            hours_left="expired"
         else
-            hours_left=$(expr $(expr "$token_expires" - $(date +%s)) / 3600)
-            if [[ $hours_left -lt 0 ]]; then
-                hours_left="-"
-            else
-                hours_left="$hours_left hours"
-            fi
+            hours_left="$hours_left hours"
         fi
-
-        printf "==> %-20s %s\n" "Cluster:" $(echo "$ctx" | cut -d '/' -f2)
-        printf "==> %-20s %s\n" "User:" $(echo "$ctx" | cut -d '/' -f3)
-        printf "==> %-20s %s\n" "Session expires in:" "$hours_left"
-        printf "==> %-20s %s\n" "Namespace:" $(echo "$ctx" | cut -d '/' -f1)
-    done
+    fi
+    printf "==> %-20s %s\n" "Cluster:" $(echo "$ctx" | cut -d '/' -f2)
+    printf "==> %-20s %s\n" "User:" $(echo "$ctx" | cut -d '/' -f3)
+    printf "==> %-20s %s\n" "Session expires in:" "$hours_left"
+    printf "==> %-20s %s\n" "Namespace:" $(echo "$ctx" | cut -d '/' -f1)
 }
 
 _list_helper() {
@@ -168,8 +154,9 @@ _list_all() {
 }
 
 _list_help() {
-    printf "Usage: ocenv list [OPTIONS]\n"
-    printf "Options:\n"
+    printf "Usage:\n"
+    printf "  ocenv list [OPTIONS]\n"
+    printf "\nOptions:\n"
     printf "  %-14s  %s\n" "-a, --active" "Lists all active sessions"
     printf "  %-14s  %s\n" "-h, --help" "Prints this help message"
 }
@@ -233,7 +220,7 @@ use() {
     fi
 
     local token_expires=$(yq '.ocenv-token-expires' $cfg)
-    if [[ -z "$token_expires" ]]; then
+    if [[ "$token_expires" == "null" ]]; then
         oc whoami --kubeconfig "$cfg" &> /dev/null
         rc=$?
     else
@@ -282,7 +269,7 @@ if [[ -z "$subcommand" ]]; then
         current_session=""
     fi
     # this will buhg out
-    selected=$(get_sessions | grep -xFv "$current_session" | fzf)
+    selected=$(get_sessions | grep -xFv "$current_session" | fzf --tmux)
 
     if [[ -n $selected ]]; then
         switch_to "${selected/_ocenv_/}"

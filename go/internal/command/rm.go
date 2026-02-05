@@ -19,7 +19,7 @@ func Rm(name string) {
 			log.Fatal(fmt.Errorf("Failed to delete environment: %v", err))
 		}
 
-		log.Printf("Environment '%s' was removed", name)
+		log.Printf("Environment '%s' was removed\n", name)
 	} else {
 		log.Fatal(fmt.Errorf("Environment does not exist"))
 	}

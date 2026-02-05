@@ -1,7 +1,27 @@
 # ocenv
-Script that utilizes [tmux](https://github.com/tmux/tmux) and
+Utility tool that utilizes [tmux](https://github.com/tmux/tmux) and
 [fzf](https://github.com/junegunn/fzf) for easier OpenShift
 cluster management.
+
+## Installation
+Two versions are available: `ocenv(go)` and `ocenv(bash)`. You can choose which one to install:
+
+### Go
+Requirements:
+- oc
+- tmux
+```sh
+./install go
+```
+### Bash
+Requirements:
+- fzf
+- oc
+- tmux
+- yq
+```sh
+./install bash
+```
 
 ## Usage
 Open fzf menu and switch to selected session

@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/martynasmuizys/ocenv/internal/log"
+	"github.com/martynasmuizys/ocenv/internal/util"
 )
 
 func Create(name string) {
@@ -43,7 +46,7 @@ func Create(name string) {
 	}
 	log.Printf("Enter cluster URL: ")
 	input, err := r.ReadString('\n')
-	url := input[:len(input)-1]
+	url := strings.TrimSpace(input[:len(input)-1])
 
 	if err != nil {
 		log.Fatal(fmt.Errorf("Failed to read user input"))
@@ -53,6 +56,20 @@ func Create(name string) {
 	if err := cmd.Oc(Login, url); err != nil {
 		log.Fatal(err)
 	}
+	// 1 day
+	expirationTimestamp := time.Now().Unix() + 86400
+	kubeCfg, err := util.ParseConfig(cfg)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	kubeCfg.OcenvTokenExpires = expirationTimestamp
+	err = util.SaveConfig(kubeCfg, cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	log.Printf("Cluster configuration created at '%s'\n", cfg)
 
 }

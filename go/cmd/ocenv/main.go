@@ -24,7 +24,7 @@ func main() {
 	activeFlag := listSet.BoolP("active", "a", false, "Lists all active sessions")
 
 	if len(os.Args) < 2 {
-		command.Use("lol")
+		command.Use("")
 		os.Exit(0)
 	}
 

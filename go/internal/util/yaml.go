@@ -15,7 +15,7 @@ type KubeConfig struct {
 	Users             []Users        `yaml:"users"`
 	Contexts          []Contexts     `yaml:"contexts"`
 	CurrentContext    string         `yaml:"current-context"`
-	OcenvTokenExpires int            `yaml:"ocenv-token-expires,"`
+	OcenvTokenExpires int64          `yaml:"ocenv-token-expires,"`
 }
 
 type Clusters struct {
@@ -61,4 +61,20 @@ func ParseConfig(path string) (*KubeConfig, error) {
 	}
 
 	return &cfg, nil
+}
+
+func SaveConfig(cfg *KubeConfig, path string) error {
+	data, err := yaml.Marshal(cfg)
+
+	if err != nil {
+		return fmt.Errorf("Failed to parse config: %v", err)
+	}
+
+	// idk why not os.WriteFile
+	err = os.WriteFile(path, data, 0644)
+	if err != nil {
+		return fmt.Errorf("Failed to save config: %v", err)
+	}
+
+	return nil
 }

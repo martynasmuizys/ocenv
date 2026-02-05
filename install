@@ -1,1 +1,29 @@
 #!/usr/bin/env bash
+
+dir=$(dirname -- "${BASH_SOURCE[0]}")
+
+case "$1" in
+    "bash")
+        echo "Installing ocenv(bash)..."
+        sudo cp "$dir/ocenv" /usr/local/bin/ocenv
+
+        if [[ $? != 0 ]]; then
+            echo "Failed to install ocenv(bash)"
+        else
+            echo "Installed ocenv(bash)"
+        fi
+        ;;
+    "go")
+        echo "Installing ocenv(go)..."
+        pushd go
+        sudo go build -o /usr/local/bin/ocenv cmd/ocenv/main.go
+        popd
+        if [[ $? != 0 ]]; then
+            echo "Failed to install ocenv(go)"
+        else
+            echo "Installed ocenv(go)"
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {go|bash}"
+esac

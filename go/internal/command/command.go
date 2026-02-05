@@ -109,9 +109,7 @@ func (c *Command) OcCheckToken(kubeCfg *util.KubeConfig) bool {
 		return false
 	}
 
-	tokenExpires := kubeCfg.OcenvTokenExpires
-
-	if ((int64(tokenExpires) - time.Now().Unix()) / 3600) < 8 {
+	if (kubeCfg.OcenvTokenExpires-time.Now().Unix())/3600 < 8 {
 		// 8 hour before expiration seems ok
 		return false
 	}
